@@ -1,0 +1,29 @@
+Group Member: 
+Lei Yu  lyu79@gatech.edu      
+		Work: rvm_map, rvm_unmap, rvm_begin_trans, rvm_about_to_modify, rvm_abort_trans, rvm_commit_trans, readme file.
+	      
+Shujun Bian sbian3@gatech.edu
+	        Work: rvm_init, rvm recovery functions, rvm_truncate_log, test cases, debugging. 
+
+
+
+
+
+Questions:
+
+1. How you use logfiles to accomplish persistency plus transaction semantics.
+Answer: we use redo logfiles to record all the changes to the memory ranges of the data segments specified by the function rvm_about_to_modify(). At the time when the transaction is committed, all the regions that are modified in this transaction are written to the rvm.log file on the disk, in a format of transaction record. In this way, all the changes in a transaction become persistent on the disk. For the recovery, the logs on the logfile is read and re-applied.
+If the transaction is not committed, the changes by the transaction will be lost and will not be reflected on the data segment. 
+
+When reading logfiles, we detect whether a transaction record on the log file is complete because the writing to the logfile may fail due to reasons like power loss, which incurs partial transaction record writing. We ignore such partial record and regard this transaction not happened.
+
+In this way, we can provide "all-or-nothing" semantic for transaction.
+
+       
+2. What goes in them? How do the files get cleaned up, so that they do not expand indefinitely?
+Answer: The logfile contains transaction record, in which all the lastest changes by the transaction made are recorded. We have transaction header and ender to indicate a transaction record. In a transaction record, for each memoray region modified,  the name of the segment, the offset, the length, and the data image of the region are recorded.
+
+During the recovery, the redo log is read sequentially and the changes are applied sequentially to the external data segment files, such that the external data segments can have the latest data in it. When the process restarts, it maps (read) these data segments into its memory to recover its state before crash.
+
+We use rvm_truncate_log() to shrink the redo logfiles. This function sequentially reads the rvm.log file and merge the changes to the data segment files. After the merge is done, the redo logfile is shrinked to zero size. It can be periodically called to avoid the logfile to expand indenfinitely. When the process is recovered from the crash, rvm_truncate_log() is called to merge the latest the changes to the external data segment and the process maps the data segment into memory.        
+
